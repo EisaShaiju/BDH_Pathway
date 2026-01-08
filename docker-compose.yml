@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  # Training service
+  train:
+    build: .
+    image: bdh-classifier:latest
+    container_name: bdh-train
+    volumes:
+      - ./train.csv:/app/train.csv:ro
+      - ./models:/app/models
+      - ./outputs:/app/outputs
+    environment:
+      - DEVICE=cuda
+    command: >
+      python train.py
+      --train-csv /app/train.csv
+      --batch-size 16
+      --epochs 50
+      --lr 0.001
+      --device cuda
+      --output /app/models/bdh_classifier.pt
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    profiles:
+      - train
+
+  # Inference service (Pathway mode)
+  inference-pathway:
+    build: .
+    image: bdh-classifier:latest
+    container_name: bdh-inference-pathway
+    volumes:
+      - ./test.csv:/app/test.csv:ro
+      - ./models:/app/models:ro
+      - ./outputs:/app/outputs
+    environment:
+      - DEVICE=cuda
+    command: >
+      python pathway_pipeline.py
+      --input /app/test.csv
+      --output /app/outputs/submission.csv
+      --model /app/models/bdh_classifier.pt
+      --device cuda
+      --mode pathway
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    profiles:
+      - inference-pathway
+
+  # Inference service (Batch mode - simpler)
+  inference:
+    build: .
+    image: bdh-classifier:latest
+    container_name: bdh-inference
+    volumes:
+      - ./test.csv:/app/test.csv:ro
+      - ./models:/app/models:ro
+      - ./outputs:/app/outputs
+    environment:
+      - DEVICE=cuda
+    command: >
+      python classify.py
+      --test-csv /app/test.csv
+      --model /app/models/bdh_classifier.pt
+      --output /app/outputs/submission.csv
+      --device cuda
+      --batch-size 32
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    profiles:
+      - inference
+
+  # CPU-only inference (no GPU required)
+  inference-cpu:
+    build: .
+    image: bdh-classifier:latest
+    container_name: bdh-inference-cpu
+    volumes:
+      - ./test.csv:/app/test.csv:ro
+      - ./models:/app/models:ro
+      - ./outputs:/app/outputs
+    environment:
+      - DEVICE=cpu
+    command: >
+      python classify.py
+      --test-csv /app/test.csv
+      --model /app/models/bdh_classifier.pt
+      --output /app/outputs/submission.csv
+      --device cpu
+      --batch-size 16
+    profiles:
+      - inference-cpu
